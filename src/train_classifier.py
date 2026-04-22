@@ -44,7 +44,12 @@ NUM_WORKERS  = 2
 
 
 def build_model(device):
-    model = efficientnet_b0(weights=EfficientNet_B0_Weights.DEFAULT)
+    model = efficientnet_b0(weights=None)
+    # Descargar pesos sin verificación de hash (evita error de hash)
+    import torch.utils.model_zoo as model_zoo
+    url = "https://download.pytorch.org/models/efficientnet_b0_rwightman-3dd342df.pth"
+    state_dict = model_zoo.load_url(url, check_hash=False)
+    model.load_state_dict(state_dict)
     in_features = model.classifier[1].in_features
     model.classifier[1] = nn.Linear(in_features, NUM_CLASSES)
     return model.to(device)
