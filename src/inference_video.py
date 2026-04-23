@@ -120,13 +120,42 @@ def draw(frame, seg_out, seg_labels, clf_probs, orig_size):
     h_orig, w_orig = orig_size
     h_in,  w_in   = SEG_SIZE
     overlay = frame.copy()
-    frame_area = h_orig * w_orig
 
     scores = seg_out["scores"].cpu().numpy()
     labels = seg_out["labels"].cpu().numpy()
     boxes  = seg_out["boxes"].cpu().numpy()
     masks  = seg_out["masks"].cpu().numpy()
 
+    # ── Verificar si Mask R-CNN detectó un teléfono real ─────────────────────
+    phone_label_id = None
+    for lbl_id, name in seg_labels.items():
+        if name == "phone":
+            phone_label_id = lbl_id
+            break
+
+    phone_detected = False
+    if phone_label_id is not None:
+        for score, lbl, box in zip(scores, labels, boxes):
+            if int(lbl) == phone_label_id and score >= SCORE_THRESH:
+                # Filtro de área: teléfono real < 20% del frame
+                area_ratio = ((box[2]-box[0]) * (box[3]-box[1])) / (w_in * h_in)
+                if area_ratio < 0.20:
+                    phone_detected = True
+                    break
+
+    # ── Ajustar probabilidades del clasificador ───────────────────────────────
+    clf_probs = clf_probs.copy()
+    phone_idx = STATES.index("phone")  # índice 4
+
+    if not phone_detected:
+        # Si Mask R-CNN no ve celular → eliminar probabilidad de "phone"
+        # y redistribuir entre las demás clases
+        clf_probs[phone_idx] = 0.0
+        total = clf_probs.sum()
+        if total > 0:
+            clf_probs = clf_probs / total
+
+    # ── Dibujar máscaras y contornos ──────────────────────────────────────────
     for score, lbl, box, mask in zip(scores, labels, boxes, masks):
         if score < SCORE_THRESH:
             continue
@@ -136,7 +165,7 @@ def draw(frame, seg_out, seg_labels, clf_probs, orig_size):
 
         # Filtro de área (evita phone detectado en la cara)
         if name in MAX_AREA_RATIO:
-            if box_area_ratio(box, (w_in * h_in)) > MAX_AREA_RATIO[name]:
+            if ((box[2]-box[0]) * (box[3]-box[1])) / (w_in * h_in) > MAX_AREA_RATIO[name]:
                 continue
 
         # Escalar al frame original
@@ -180,9 +209,9 @@ def draw(frame, seg_out, seg_labels, clf_probs, orig_size):
     # ── Barra de probabilidades ───────────────────────────────────────────────
     bar_y = h_orig - 30
     bw    = w_orig // len(STATES) - 4
-    for i, (s, p) in enumerate(zip(STATES, clf_probs)):
+    for i, (s, prob) in enumerate(zip(STATES, clf_probs)):
         bx = 4 + i * (bw + 4)
-        filled = int(bw * p)
+        filled = int(bw * prob)
         cv2.rectangle(overlay, (bx, bar_y), (bx+bw, bar_y+20), (50,50,50), -1)
         cv2.rectangle(overlay, (bx, bar_y), (bx+filled, bar_y+20),
                       STATE_COLORS[s], -1)
