@@ -21,3 +21,12 @@ python train_classifier.py
 
 # 5. Evaluar ambos
 python evaluate.py
+
+
+##Fuera del contenedor:
+python -c "import torch; print(torch.cuda.is_available())"
+si da True no hacer siguiente paso
+
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+
+python src/inference_video.py
