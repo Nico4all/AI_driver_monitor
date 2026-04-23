@@ -143,17 +143,41 @@ def draw(frame, seg_out, seg_labels, clf_probs, orig_size):
                     phone_detected = True
                     break
 
+    # ── Verificar si Mask R-CNN detectó ojos ─────────────────────────────────
+    eye_ids = {lbl_id for lbl_id, name in seg_labels.items()
+               if name in ("left_eye", "right_eye")}
+    eyes_detected = any(
+        int(lbl) in eye_ids and score >= SCORE_THRESH
+        for score, lbl in zip(scores, labels)
+    )
+    
     # ── Ajustar probabilidades del clasificador ───────────────────────────────
     clf_probs = clf_probs.copy()
-    phone_idx = STATES.index("phone")  # índice 4
+    phone_idx       = STATES.index("phone")        # índice 4
+    eyes_closed_idx = STATES.index("eyes_closed")  # índice 3
 
+    # Regla 1: sin celular detectado → P(phone) = 0
     if not phone_detected:
-        # Si Mask R-CNN no ve celular → eliminar probabilidad de "phone"
-        # y redistribuir entre las demás clases
         clf_probs[phone_idx] = 0.0
-        total = clf_probs.sum()
-        if total > 0:
-            clf_probs = clf_probs / total
+
+    # Regla 2: sin ojos detectados → forzar 90% eyes_closed
+    if not eyes_detected:
+        clf_probs[eyes_closed_idx] = 0.90
+        # Distribuir el 10% restante entre las demás clases (excepto phone si no hay celular)
+        remaining_idx = [i for i in range(len(STATES))
+                         if i != eyes_closed_idx and clf_probs[i] > 0]
+        remaining_sum = sum(clf_probs[i] for i in remaining_idx)
+        if remaining_sum > 0:
+            for i in remaining_idx:
+                clf_probs[i] = clf_probs[i] / remaining_sum * 0.10
+        else:
+            # Si no queda nada, poner todo en eyes_closed
+            clf_probs[eyes_closed_idx] = 1.0
+
+    # Renormalizar para que sume 1
+    total = clf_probs.sum()
+    if total > 0:
+        clf_probs = clf_probs / total
 
     # ── Dibujar máscaras y contornos ──────────────────────────────────────────
     for score, lbl, box, mask in zip(scores, labels, boxes, masks):
